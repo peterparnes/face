@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Robotansiktet</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen lab instrument. The face fills the stage; a narrow control rack sits to the right (stacks below on phones). */
+:root {
+  --bg: #0b0f12;
+  --stage-hi: #2b343c;
+  --stage-lo: #11171b;
+  --panel: #11171b;
+  --panel-2: #182128;
+  --line: #26323b;
+  --fg: #e2e9ed;
+  --muted: #8d9ca7;
+  --accent: #86dbff;
+  --accent-ink: #062330;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+body.presenting .app { grid-template-columns: minmax(0, 1fr) 0; }
+body.presenting .panel { display: none; }
+body.presenting .hud { display: none; }
+
+/* Stage */
+.stage {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 38%, var(--stage-hi), var(--stage-lo) 72%);
+  min-height: 0;
+  touch-action: none;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.stage-tools {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  display: flex; gap: 8px;
+  opacity: .35; transition: opacity .2s;
+}
+.stage:hover .stage-tools, .stage-tools:focus-within { opacity: 1; }
+.hud {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.hud b { color: var(--fg); font-weight: 500; }
+
+/* Panel */
+.panel {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+  min-width: 0;
+  padding-block: 18px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 22px;
+}
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.brand h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.005em; text-wrap: balance; }
+.brand span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 10px; }
+.label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.label output { font-family: var(--font-mono); text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+.emo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.emo {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 10px;
+  background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 6px;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.emo:hover { border-color: #3a4954; }
+.emo[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.emo kbd { font-family: var(--font-mono); font-size: 11px; opacity: .6; }
+.emo small { display: block; font-family: var(--font-mono); font-size: 10px; opacity: .65; }
+
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+.row { display: flex; flex-direction: column; gap: 4px; }
+
+.toggles { display: flex; flex-direction: column; gap: 2px; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; cursor: pointer; }
+.toggle span small { display: block; color: var(--muted); font-size: 12px; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+
+.btn {
+  font: inherit; font-size: 13px;
+  padding: 7px 11px;
+  background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { border-color: #3a4954; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 500; }
+.stage-tools .btn { background: rgba(17,23,27,.8); backdrop-filter: blur(6px); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.say { display: flex; gap: 6px; }
+.say input[type="text"] {
+  flex: 1; min-width: 0;
+  font: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+}
+
+details { border-top: 1px solid var(--line); padding-top: 14px; }
+summary { cursor: pointer; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary .label::after { content: "+"; font-family: var(--font-mono); }
+details[open] summary .label::after { content: "−"; }
+details > div { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.au { display: flex; flex-direction: column; gap: 3px; }
+.au header { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.au header i { font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.au header output { font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 3.5em; text-align: right; }
+.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.log {
+  list-style: none; margin: 0; padding: 0;
+  font-family: var(--font-mono); font-size: 11.5px;
+  max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+}
+.log li { display: grid; grid-template-columns: 6.5em 5.5em minmax(0, 1fr); gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.log li:last-child { border-bottom: 0; }
+.log li .t { color: var(--muted); }
+.log li .k { color: var(--accent); }
+.log li .d { overflow-wrap: anywhere; }
+.log .empty { display: block; color: var(--muted); padding: 10px 8px; }
+textarea.fallback { width: 100%; min-height: 120px; font-family: var(--font-mono); font-size: 11px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+
+pre {
+  margin: 0; padding: 10px; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--fg);
+}
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; max-width: 65ch; }
+.hint kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--fg);
+  padding: 8px 14px; border-radius: 6px; font-size: 13px; z-index: 10;
+}
+
+@media (max-width: 820px) {
+  html, body { height: auto; }
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .stage { height: 62svh; min-height: 340px; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  body.presenting .stage { height: 100svh; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="stage" id="stage">
+    <canvas id="face" aria-label="Robotansikte" role="img"></canvas>
+    <div class="stage-tools">
+      <button class="btn" id="btnFull" type="button">Helskärm</button>
+      <button class="btn" id="btnPanel" type="button">Dölj panel</button>
+    </div>
+    <div class="hud" id="hud"></div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <div class="brand">
+      <h1>Robotansiktet</h1>
+      <span>HRI-01 · prototyp</span>
+    </div>
+
+    <section>
+      <div class="label">Känsla</div>
+      <div class="emo-grid" id="emoGrid"></div>
+    </section>
+
+    <section>
+      <div class="row">
+        <label class="label" for="intensity">Intensitet <output id="intensityOut">80 %</output></label>
+        <input type="range" id="intensity" min="0" max="100" value="80">
+      </div>
+      <div class="row">
+        <label class="label" for="transition">Övergångstid <output id="transitionOut">450 ms</output></label>
+        <input type="range" id="transition" min="50" max="2500" step="50" value="450">
+      </div>
+    </section>
+
+    <section>
+      <div class="label">Beteende</div>
+      <div class="toggles">
+        <label class="toggle" for="tFollow"><span>Följ pekaren<small>Blicken följer musen eller fingret</small></span><input type="checkbox" id="tFollow" checked></label>
+        <label class="toggle" for="tBlink"><span>Automatisk blinkning<small>Slumpintervall 2–6 s</small></span><input type="checkbox" id="tBlink" checked></label>
+        <label class="toggle" for="tMicro"><span>Mikrorörelser<small>Andning, huvudsväng, sackader</small></span><input type="checkbox" id="tMicro" checked></label>
+        <label class="toggle" for="tColor"><span>Känslofärg<small>Färgkodar ögonen per känsla</small></span><input type="checkbox" id="tColor"></label>
+        <label class="toggle" for="tDemo"><span>Demosekvens<small>Går igenom alla känslor var 3,5 s</small></span><input type="checkbox" id="tDemo"></label>
+      </div>
+    </section>
+
+    <section>
+      <label class="label" for="sayText">Tal</label>
+      <div class="say">
+        <input type="text" id="sayText" value="Hej! Jag heter HRI-01. Vad vill du prata om?">
+        <button class="btn primary" id="btnSay" type="button">Tala</button>
+      </div>
+      <label class="toggle" for="tSound"><span>Ljud via talsyntes<small>Annars animeras bara munnen</small></span><input type="checkbox" id="tSound"></label>
+    </section>
+
+    <details id="auDetails">
+      <summary><div class="label">Ansiktsparametrar (FACS)</div></summary>
+      <div>
+        <p class="hint">Reglagen styr målvärdet direkt. Ett nytt känsloval skriver över dem.</p>
+        <div id="auList" style="display:flex;flex-direction:column;gap:10px"></div>
+        <div class="btn-row">
+          <button class="btn" id="btnResetAU" type="button">Återställ till känsla</button>
+          <button class="btn" id="btnCopyAU" type="button">Kopiera som JSON</button>
+        </div>
+      </div>
+    </details>
+
+    <section>
+      <div class="label">Händelselogg <output id="logCount">0</output></div>
+      <ul class="log" id="log"><li class="empty">Inga händelser ännu. Välj en känsla eller klicka på ansiktet.</li></ul>
+      <div class="btn-row">
+        <button class="btn" id="btnCopyLog" type="button">Kopiera logg (JSON)</button>
+        <button class="btn" id="btnClearLog" type="button">Rensa</button>
+      </div>
+      <textarea class="fallback" id="fallback" hidden readonly aria-label="Text att kopiera"></textarea>
+    </section>
+
+    <details>
+      <summary><div class="label">Styrning från kod</div></summary>
+      <div>
+        <p class="hint">Samma kommandon finns som <code>window.face</code> och via <code>postMessage</code> när sidan bäddas in.</p>
+<pre>face.setEmotion('joy', 0.8, 400)
+face.lookAt(0.4, -0.2, 2)   // x, y i [-1, 1], sek
+face.blink()
+face.say('Hej på dig')
+face.setParam('smile', 0.5)
+face.getState()
+
+iframe.contentWindow.postMessage({
+  type: 'face', cmd: 'setEmotion',
+  args: ['anger', 0.6]
+}, '*')</pre>
+        <p class="hint">Kortkommandon: <kbd>0</kbd>–<kbd>9</kbd> känslor, <kbd>B</kbd> blinka, <kbd>H</kbd> dölj panel, <kbd>F</kbd> helskärm. Klick på ansiktet ger en skrämselreaktion.</p>
+      </div>
+    </details>
+  </aside>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- Model ----------
+const DEF = { browY:0, browInner:0, browAsym:0, lidUpper:1, lidLower:0, lidAngle:0, pupil:1,
+  smile:0, open:0, width:0, asym:0, upperLip:0, blush:0, tilt:0, nod:0, gazeX:0, gazeY:0 };
+
+const PARAMS = [
+  ['browY',     'Ögonbryn, höjd',          'AU1+2 / AU4', -1, 1],
+  ['browInner', 'Ögonbryn, inre del',      'AU1 / AU4',   -1, 1],
+  ['browAsym',  'Ögonbryn, asymmetri',     'AU2 (R)',     -1, 1],
+  ['lidUpper',  'Övre ögonlock',           'AU5 / AU43',   0, 1.4],
+  ['lidLower',  'Nedre ögonlock, kisning', 'AU6 / AU7',    0, 1],
+  ['lidAngle',  'Ögonlockens vinkel',      'AU4 / AU1',   -1, 1],
+  ['pupil',     'Pupillstorlek',           '—',          0.6, 1.4],
+  ['smile',     'Mungipor',                'AU12 / AU15', -1, 1],
+  ['open',      'Mun öppen',               'AU25–27',      0, 1],
+  ['width',     'Munbredd',                'AU20 / AU18', -1, 1],
+  ['asym',      'Mun, asymmetri',          'AU14 (R)',    -1, 1],
+  ['upperLip',  'Överläpp, rynkning',      'AU9 / AU10',   0, 1],
+  ['blush',     'Kinder',                  '—',            0, 1],
+  ['tilt',      'Huvudlutning',            'AH',          -1, 1],
+  ['nod',       'Huvud upp/ner',           'AH',          -1, 1],
+  ['gazeX',     'Blick, sidled',           'AE',          -1, 1],
+  ['gazeY',     'Blick, höjdled',          'AE',          -1, 1],
+];
+
+const EMOTIONS = {
+  neutral:  { label:'Neutral',   key:'0', hue:195, au:'—', p:{} },
+  joy:      { label:'Glädje',    key:'1', hue:42,  au:'AU6+12+25',
+              p:{ smile:1, open:.32, lidLower:.6, lidUpper:.92, browY:.2, blush:.7, width:.3, pupil:1.1 } },
+  sadness:  { label:'Ledsenhet', key:'2', hue:218, au:'AU1+4+15',
+              p:{ smile:-.75, browInner:1, browY:-.15, lidUpper:.72, lidAngle:-.8, width:-.2, pupil:.95, gazeY:.45, tilt:.35, nod:.35 } },
+  anger:    { label:'Ilska',     key:'3', hue:4,   au:'AU4+5+7+23',
+              p:{ browInner:-1, browY:-.65, lidAngle:.9, lidUpper:.85, lidLower:.35, smile:-.4, open:.08, width:-.25, pupil:.8, upperLip:.25, nod:.2 } },
+  fear:     { label:'Rädsla',    key:'4', hue:272, au:'AU1+2+4+5+20',
+              p:{ browInner:.9, browY:.65, lidUpper:1.32, lidLower:.1, open:.42, width:.45, smile:-.35, pupil:1.3, nod:-.4 } },
+  surprise: { label:'Förvåning', key:'5', hue:182, au:'AU1+2+5+26',
+              p:{ browY:1, browInner:.25, lidUpper:1.38, open:.78, width:-.4, pupil:1.15, nod:-.25 } },
+  disgust:  { label:'Avsky',     key:'6', hue:88,  au:'AU9+10+15',
+              p:{ browY:-.45, browInner:-.35, lidLower:.55, lidUpper:.72, upperLip:1, smile:-.5, asym:.2, open:.14, tilt:-.3, nod:-.2, width:-.1 } },
+  contempt: { label:'Förakt',    key:'7', hue:318, au:'AU14 (R)',
+              p:{ asym:1, lidUpper:.8, lidLower:.2, browY:.1, tilt:.25, gazeX:-.2, nod:-.2 } },
+  thinking: { label:'Fundersam', key:'8', hue:205, au:'AU2 (R)+14',
+              p:{ browAsym:.9, asym:.35, smile:-.1, width:-.35, gazeX:.55, gazeY:-.6, tilt:-.3, lidUpper:.9 } },
+  sleepy:   { label:'Trött',     key:'9', hue:232, au:'AU43',
+              p:{ lidUpper:.32, browY:-.15, pupil:.9, tilt:.45, nod:.4, gazeY:.2, open:.04 } },
+};
+const EMO_IDS = Object.keys(EMOTIONS);
+
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const state = { emotion:'neutral', intensity:.8, transitionMs:450, follow:true, autoBlink:true,
+  micro:!reduced, colorCode:false, demo:false, sound:false, adjusted:false };
+const target = { ...DEF }, cur = { ...DEF };
+let hue = 195, hueTarget = 195;
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+
+function computeTarget() {
+  const p = EMOTIONS[state.emotion].p;
+  for (const k in DEF) target[k] = DEF[k] + ((k in p ? p[k] : DEF[k]) - DEF[k]) * state.intensity;
+}
+
+// ---------- Log ----------
+const t0 = performance.now();
+const events = [];
+const logEl = document.getElementById('log');
+function fmtT(ms) {
+  const s = ms / 1000, m = Math.floor(s / 60);
+  return String(m).padStart(2, '0') + ':' + (s - m * 60).toFixed(3).padStart(6, '0');
+}
+function log(type, data = {}) {
+  const ms = performance.now() - t0;
+  const ev = { t_ms: Math.round(ms), time: new Date().toISOString(), type, ...data };
+  events.push(ev);
+  if (events.length === 1) logEl.innerHTML = '';
+  const li = document.createElement('li');
+  const detail = Object.entries(data).map(([k, v]) => k + '=' + (typeof v === 'number' ? +v.toFixed(2) : v)).join(' ');
+  li.innerHTML = `<span class="t">${fmtT(ms)}</span><span class="k"></span><span class="d"></span>`;
+  li.children[1].textContent = type;
+  li.children[2].textContent = detail;
+  logEl.prepend(li);
+  while (logEl.children.length > 200) logEl.lastChild.remove();
+  document.getElementById('logCount').textContent = events.length;
+  window.dispatchEvent(new CustomEvent('face:event', { detail: ev }));
+}
+
+// ---------- Behaviour state ----------
+let t = 0;
+let blink = 0, blinkStart = -1, nextBlink = rand(1.5, 4), pendingDouble = false;
+const gaze = { x:0, y:0 }, gazeT = { x:0, y:0 };
+let pointer = { x:0, y:0, last:-99 };
+let manualGaze = null;
+let nextSaccade = 0;
+let overlay = 0;                     // poke reaction weight
+const speech = { active:false, start:0, seq:[], open:0, width:0, tOpen:0, tWidth:0 };
+let demoNext = 0, demoIdx = 0;
+
+function triggerBlink() { if (blinkStart < 0) blinkStart = t; }
+
+// ---------- Canvas ----------
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('face');
+const ctx = canvas.getContext('2d');
+const view = { W:1, H:1, dpr:1, s:1, ox:0, oy:0, k:1 };
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  view.W = Math.max(1, r.width); view.H = Math.max(1, r.height);
+  view.dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(view.W * view.dpr);
+  canvas.height = Math.round(view.H * view.dpr);
+  view.s = Math.min(view.W, view.H) / 1000 * 0.95;
+  view.ox = view.W / 2 - 500 * view.s;
+  view.oy = view.H / 2 - 500 * view.s;
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+// Fixed iris striation pattern
+const STRIA = Array.from({ length: 64 }, (_, i) => ({ a: i / 64 * Math.PI * 2 + rand(-.03, .03), r0: rand(0, 4), r1: rand(-6, 0), w: rand(.6, 1.4), al: rand(.12, .32) }));
+
+// Scanline pattern
+const scan = (() => {
+  const c = document.createElement('canvas'); c.width = 4; c.height = 4;
+  const x = c.getContext('2d'); x.fillStyle = 'rgba(255,255,255,0.025)'; x.fillRect(0, 0, 4, 1);
+  return ctx.createPattern(c, 'repeat');
+})();
+
+function squircle(cx, cy, a, b, n, N = 160) {
+  const p = new Path2D();
+  for (let i = 0; i <= N; i++) {
+    const th = i / N * Math.PI * 2, c = Math.cos(th), s = Math.sin(th);
+    const x = cx + a * Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
+    const y = cy + b * Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
+    i ? p.lineTo(x, y) : p.moveTo(x, y);
+  }
+  p.closePath();
+  return p;
+}
+const SHELL = squircle(500, 470, 350, 395, 3);
+const SCREEN = squircle(500, 462, 290, 300, 4.2);
+const SEAM = squircle(500, 462, 312, 322, 4.2);
+
+const glow = a => `hsla(${hue.toFixed(1)},90%,72%,${a})`;
+function setGlow(blur, a = .9) { ctx.shadowColor = glow(a); ctx.shadowBlur = blur * view.k; }
+function noGlow() { ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'; }
+
+function drawEye(cx, cy, mirror, P, g) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(mirror, 1);           // local +x points outward
+  const w = 84, c0 = 2;
+  const hu = 62 * Math.max(0, P.lidUpper) * (1 - blink);
+  const ang = P.lidAngle;
+  const uIn = -hu * 1.33 + Math.max(0, ang) * hu * .95;
+  const uOut = -hu * 1.33 + Math.max(0, -ang) * hu * .95;
+  let lo = 44 * (1 - 1.2 * P.lidLower) * (1 - blink) * 1.33;
+  lo = Math.max(lo, (uIn + uOut) / 2 + 8 * (1 - blink));
+  const up = new Path2D();
+  up.moveTo(-w, c0); up.bezierCurveTo(-w * .45, c0 + uIn, w * .5, c0 + uOut, w, c0 - 3);
+  const shape = new Path2D(up);
+  shape.bezierCurveTo(w * .5, c0 + lo, -w * .45, c0 + lo, -w, c0); shape.closePath();
+
+  const ix = clamp(g.x, -1, 1) * 30 * mirror, iy = clamp(g.y, -1, 1) * 20;
+  const R = 41, pr = 15 * P.pupil;
+
+  ctx.save();
+  ctx.clip(shape);
+  ctx.fillStyle = glow(.07); ctx.fillRect(-w - 10, -140, 2 * w + 20, 280);
+  let gr = ctx.createRadialGradient(ix, iy, 0, ix, iy, 95);
+  gr.addColorStop(0, glow(.14)); gr.addColorStop(1, glow(0));
+  ctx.fillStyle = gr; ctx.fillRect(-w - 10, -140, 2 * w + 20, 280);
+
+  ctx.globalCompositeOperation = 'lighter';
+  gr = ctx.createRadialGradient(ix, iy, pr * .6, ix, iy, R);
+  gr.addColorStop(0, glow(.95));
+  gr.addColorStop(.4, glow(.5));
+  gr.addColorStop(.82, `hsla(${hue + 18},80%,55%,.42)`);
+  gr.addColorStop(1, glow(.95));
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.arc(ix, iy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = 'round';
+  for (const s of STRIA) {
+    const ca = Math.cos(s.a), sa = Math.sin(s.a);
+    ctx.strokeStyle = glow(s.al); ctx.lineWidth = s.w;
+    ctx.beginPath();
+    ctx.moveTo(ix + ca * (pr + 3 + s.r0), iy + sa * (pr + 3 + s.r0));
+    ctx.lineTo(ix + ca * (R - 4 + s.r1), iy + sa * (R - 4 + s.r1));
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#020406';
+  ctx.beginPath(); ctx.arc(ix, iy, pr, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = glow(.35); ctx.lineWidth = 1.5; ctx.stroke();
+  // specular highlights fixed in world space (upper left)
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.beginPath(); ctx.arc(ix - 13 * mirror, iy - 13, 7.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  ctx.beginPath(); ctx.arc(ix + 10 * mirror, iy + 11, 3, 0, Math.PI * 2); ctx.fill();
+  // lid shadow
+  const apex = c0 + .75 * (uIn + uOut) / 2;
+  gr = ctx.createLinearGradient(0, apex - 4, 0, apex + 26);
+  gr.addColorStop(0, 'rgba(0,0,0,.6)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gr; ctx.fillRect(-w - 10, -140, 2 * w + 20, 280);
+  ctx.restore();
+
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  setGlow(18);
+  ctx.strokeStyle = glow(.75); ctx.lineWidth = 3; ctx.stroke(shape);
+  ctx.strokeStyle = glow(.98); ctx.lineWidth = 6.5; ctx.stroke(up);
+  noGlow();
+  ctx.restore();
+}
+
+function drawBrow(cx, cy, mirror, P) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(mirror, 1);
+  const base = -112;
+  const raise = P.browY * 26 + P.browAsym * (mirror > 0 ? 24 : -8);
+  const inY = base - raise - P.browInner * 26;
+  const outY = base - raise + P.browInner * 7;
+  const inX = -80 + Math.max(0, -P.browInner) * 12;
+  const outX = 86;
+  const arch = 13 + P.browY * 5 - Math.max(0, P.browInner) * 6 + Math.max(0, mirror * P.browAsym) * 6;
+  const p1x = (inX + outX) / 2, p1y = (inY + outY) / 2 - arch * 2;
+  const top = [], bot = [];
+  const N = 28;
+  for (let i = 0; i <= N; i++) {
+    const u = i / N, v = 1 - u;
+    const x = v * v * inX + 2 * v * u * p1x + u * u * outX;
+    const y = v * v * inY + 2 * v * u * p1y + u * u * outY;
+    const dx = 2 * v * (p1x - inX) + 2 * u * (outX - p1x);
+    const dy = 2 * v * (p1y - inY) + 2 * u * (outY - p1y);
+    const L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+    const th = (16 * v + 5 * u) * (1 - Math.pow(u, 8)) * .5 + .6;
+    top.push([x + nx * th, y + ny * th]); bot.push([x - nx * th, y - ny * th]);
+  }
+  ctx.beginPath();
+  top.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  for (let i = bot.length - 1; i >= 0; i--) ctx.lineTo(bot[i][0], bot[i][1]);
+  ctx.closePath();
+  setGlow(16);
+  ctx.fillStyle = glow(.95); ctx.fill();
+  noGlow();
+  ctx.restore();
+}
+
+function drawMouth(cx, cy, P) {
+  ctx.save(); ctx.translate(cx, cy);
+  const open = clamp(P.open + speech.open * (1 - P.open * .6), 0, 1.1);
+  const wid = P.width + speech.width;
+  const W = 108 * (1 + .3 * wid);
+  const sm = P.smile;
+  const yL = -sm * 32 + P.asym * 4;
+  const yR = -sm * 32 - P.asym * 30;
+  const uT = -open * 24 - P.upperLip * 16 + sm * 4;
+  const lT = Math.max(uT, open * 90 + Math.max(0, sm) * open * 24 + sm * 4);
+  const base = .25 * (yL + yR);
+  const cu = (uT - base) / .75, cl = (lT - base) / .75;
+  const sneer = P.upperLip * 16;
+  const shape = new Path2D();
+  shape.moveTo(-W, yL);
+  shape.bezierCurveTo(-W * .45, cu, W * .45, cu - sneer, W, yR);
+  shape.bezierCurveTo(W * .55, cl, -W * .55, cl, -W, yL);
+  shape.closePath();
+  const gap = lT - uT;
+  if (gap > 3) {
+    ctx.save(); ctx.clip(shape);
+    ctx.fillStyle = glow(.06); ctx.fillRect(-W - 10, -120, 2 * W + 20, 260);
+    ctx.globalCompositeOperation = 'lighter';
+    const th = Math.min(17, gap * .32);
+    ctx.fillStyle = glow(.45); ctx.fillRect(-W, -140, 2 * W, 140 + uT + th);
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 2;
+    ctx.globalCompositeOperation = 'source-over';
+    for (const x of [-46, -16, 16, 46]) { ctx.beginPath(); ctx.moveTo(x * (W / 108), uT - 30); ctx.lineTo(x * (W / 108), uT + th); ctx.stroke(); }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'hsla(350,75%,66%,.32)';
+    ctx.beginPath(); ctx.ellipse(0, lT - 4, W * .5, Math.min(30, gap * .42), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  setGlow(18);
+  ctx.strokeStyle = glow(.95); ctx.lineWidth = 6; ctx.stroke(shape);
+  if (sm > .25) {
+    ctx.strokeStyle = glow(Math.min(.8, (sm - .25) * 1.4)); ctx.lineWidth = 3.5;
+    for (const [s, y] of [[-1, yL], [1, yR]]) {
+      ctx.beginPath(); ctx.moveTo(s * (W + 6), y - 12); ctx.quadraticCurveTo(s * (W + 17), y, s * (W + 9), y + 10); ctx.stroke();
+    }
+  }
+  noGlow();
+  ctx.restore();
+}
+
+function render(P) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const k = view.dpr * view.s; view.k = k;
+  ctx.setTransform(k, 0, 0, k, view.dpr * view.ox, view.dpr * view.oy);
+
+  const breath = state.micro ? Math.sin(t * Math.PI * 2 / 4.2) * 4 : 0;
+  const sway = state.micro ? Math.sin(t * .53) * .012 + Math.sin(t * .21) * .008 : 0;
+
+  // shoulders + neck (do not rotate with head)
+  ctx.save(); ctx.translate(0, breath * .4);
+  let gr = ctx.createLinearGradient(0, 900, 0, 1200);
+  gr.addColorStop(0, '#4a535c'); gr.addColorStop(1, '#1a2026');
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.ellipse(500, 1090, 470, 150, 0, 0, Math.PI * 2); ctx.fill();
+  gr = ctx.createLinearGradient(430, 0, 570, 0);
+  gr.addColorStop(0, '#2a3138'); gr.addColorStop(.5, '#59636d'); gr.addColorStop(1, '#2a3138');
+  ctx.fillStyle = gr; ctx.fillRect(432, 820, 136, 150);
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  for (let y = 860; y < 960; y += 22) ctx.fillRect(432, y, 136, 3);
+  ctx.restore();
+
+  // head transform
+  ctx.save();
+  const hx = 500 + gaze.x * 9, hy = 520 + breath + P.nod * 16;
+  ctx.translate(hx, hy); ctx.rotate(P.tilt * .12 + sway); ctx.translate(-500, -520);
+
+  // ears with status light
+  for (const ex of [150, 850]) {
+    gr = ctx.createRadialGradient(ex - 10, 455, 4, ex, 470, 62);
+    gr.addColorStop(0, '#6a747e'); gr.addColorStop(1, '#262d33');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(ex, 470, 60, 0, Math.PI * 2); ctx.fill();
+    setGlow(14);
+    ctx.strokeStyle = glow(.8); ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(ex, 470, 42, 0, Math.PI * 2); ctx.stroke();
+    noGlow();
+  }
+
+  // shell
+  gr = ctx.createLinearGradient(250, 90, 760, 900);
+  gr.addColorStop(0, '#f3f5f7'); gr.addColorStop(.55, '#cdd3d9'); gr.addColorStop(1, '#8f99a3');
+  ctx.fillStyle = gr; ctx.fill(SHELL);
+  gr = ctx.createRadialGradient(370, 210, 10, 370, 210, 300);
+  gr.addColorStop(0, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gr; ctx.fill(SHELL);
+  ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.lineWidth = 2; ctx.stroke(SHELL);
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2;
+  ctx.save(); ctx.translate(0, 2); ctx.stroke(SEAM); ctx.restore();
+  ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.stroke(SEAM);
+
+  // speaker grille + model mark
+  ctx.fillStyle = 'rgba(20,26,31,.45)';
+  for (let r = 0; r < 3; r++) for (let c = -4; c <= 4; c++) {
+    const x = 500 + c * 14 + (r % 2 ? 7 : 0); if (r % 2 && c === 4) continue;
+    ctx.beginPath(); ctx.arc(x, 792 + r * 12, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(20,26,31,.42)';
+  ctx.font = '500 15px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = 'center'; ctx.fillText('HRI-01', 500, 845);
+
+  // screen
+  gr = ctx.createRadialGradient(500, 420, 20, 500, 462, 340);
+  gr.addColorStop(0, '#0e161b'); gr.addColorStop(1, '#030608');
+  ctx.fillStyle = gr; ctx.fill(SCREEN);
+  ctx.save(); ctx.clip(SCREEN);
+
+  ctx.save();
+  ctx.translate(gaze.x * 10, gaze.y * 7 + P.nod * 5);
+  // cheeks
+  ctx.globalCompositeOperation = 'lighter';
+  for (const bx of [295, 705]) {
+    gr = ctx.createRadialGradient(bx, 548, 0, bx, 548, 78);
+    gr.addColorStop(0, `hsla(350,90%,68%,${P.blush * .38})`); gr.addColorStop(1, 'hsla(350,90%,68%,0)');
+    ctx.fillStyle = gr; ctx.fillRect(bx - 80, 468, 160, 160);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  const g = { x: gaze.x, y: gaze.y };
+  drawBrow(368, 410, -1, P); drawBrow(632, 410, 1, P);
+  drawEye(368, 410, -1, P, g); drawEye(632, 410, 1, P, g);
+  drawMouth(500, 602, P);
+  ctx.restore();
+
+  ctx.fillStyle = scan; ctx.fill(SCREEN);
+  gr = ctx.createLinearGradient(250, 160, 520, 420);
+  gr.addColorStop(0, 'rgba(255,255,255,.07)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.ellipse(390, 260, 250, 110, -.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // screen bezel
+  ctx.strokeStyle = '#141a1f'; ctx.lineWidth = 9; ctx.stroke(SCREEN);
+  gr = ctx.createLinearGradient(0, 160, 0, 770);
+  gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.strokeStyle = gr; ctx.lineWidth = 1.5;
+  ctx.save(); ctx.translate(0, -5); ctx.stroke(SCREEN); ctx.restore();
+
+  ctx.restore();
+}
+
+// ---------- Speech ----------
+const VIS = { a:[.75,.1], o:[.55,-.45], u:[.42,-.55], 'å':[.55,-.45], e:[.4,.35], i:[.3,.45], 'ä':[.55,.25], y:[.32,-.4], 'ö':[.45,-.35] };
+function buildVisemes(text) {
+  const seq = []; const dt = 1 / 13;
+  let time = 0;
+  for (const ch of text.toLowerCase()) {
+    let o = .12, w = 0, d = dt;
+    if (VIS[ch]) [o, w] = VIS[ch];
+    else if ('mbp'.includes(ch)) o = 0;
+    else if (ch === ' ') { o = .05; d = dt * .8; }
+    else if ('.,!?;:'.includes(ch)) { o = 0; d = dt * 4; }
+    else if ('fv'.includes(ch)) { o = .08; w = .1; }
+    seq.push({ t: time, o, w }); time += d;
+  }
+  seq.push({ t: time, o: 0, w: 0 });
+  return seq;
+}
+function say(text) {
+  text = String(text || '').trim(); if (!text) return;
+  speech.seq = buildVisemes(text); speech.start = t; speech.active = true;
+  speech.cps = 13;
+  log('speech', { text: text.slice(0, 80), sound: state.sound });
+  if (state.sound && 'speechSynthesis' in window) {
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'sv-SE';
+      const v = speechSynthesis.getVoices().find(v => v.lang && v.lang.toLowerCase().startsWith('sv'));
+      if (v) u.voice = v;
+      u.onstart = () => { speech.start = t; };
+      u.onboundary = e => { if (e.charIndex != null && speech.seq[e.charIndex]) speech.start = t - speech.seq[e.charIndex].t; };
+      u.onend = () => { speech.active = false; };
+      speechSynthesis.speak(u);
+    } catch (e) { /* animation continues without sound */ }
+  }
+}
+function updateSpeech(dt) {
+  if (speech.active) {
+    const el = t - speech.start, seq = speech.seq;
+    if (el > seq[seq.length - 1].t + .1 && !(state.sound && window.speechSynthesis && speechSynthesis.speaking)) speech.active = false;
+    let i = 0; while (i < seq.length - 1 && seq[i + 1].t <= el) i++;
+    speech.tOpen = seq[i] ? seq[i].o : 0; speech.tWidth = seq[i] ? seq[i].w : 0;
+  } else { speech.tOpen = 0; speech.tWidth = 0; }
+  const a = 1 - Math.exp(-dt / .045);
+  speech.open += (speech.tOpen - speech.open) * a;
+  speech.width += (speech.tWidth - speech.width) * a;
+}
+
+// ---------- Loop ----------
+let last = performance.now();
+const P = { ...DEF };
+const SURPRISE = EMOTIONS.surprise.p;
+
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now; t += dt;
+
+  const a = 1 - Math.exp(-dt / Math.max(.02, state.transitionMs / 1000 / 3));
+  for (const k in DEF) cur[k] += (target[k] - cur[k]) * a;
+  let dh = ((hueTarget - hue + 540) % 360) - 180;
+  hue = (hue + dh * a + 360) % 360;
+
+  // poke overlay
+  overlay = Math.max(0, overlay - dt / .9);
+  const ow = overlay > .75 ? 1 : overlay / .75;
+  for (const k in DEF) { const sv = (k in SURPRISE ? SURPRISE[k] : DEF[k]); P[k] = cur[k] + (DEF[k] + (sv - DEF[k]) * .85 - cur[k]) * ow * ow; }
+
+  // blink
+  if (state.autoBlink && t >= nextBlink && blinkStart < 0) {
+    triggerBlink();
+    pendingDouble = Math.random() < .14;
+    nextBlink = t + rand(2, 6) * (state.emotion === 'sleepy' ? 1.6 : 1);
+  }
+  if (blinkStart >= 0) {
+    const ph = t - blinkStart;
+    blink = ph < .07 ? ph / .07 : Math.max(0, 1 - (ph - .07) / .12);
+    if (ph > .19) { blinkStart = -1; blink = 0; if (pendingDouble) { pendingDouble = false; blinkStart = t + .06; } }
+    if (ph < 0) blink = 0;
+  }
+
+  // gaze
+  const pointerLive = state.follow && t - pointer.last < 2.5;
+  if (manualGaze && t < manualGaze.until) { gazeT.x = manualGaze.x; gazeT.y = manualGaze.y; }
+  else if (pointerLive) { gazeT.x = pointer.x; gazeT.y = pointer.y; }
+  else if (state.micro && t > nextSaccade) {
+    const r = rand(0, .35), th = rand(0, Math.PI * 2);
+    gazeT.x = Math.cos(th) * r; gazeT.y = Math.sin(th) * r * .6;
+    nextSaccade = t + rand(.8, 3);
+  } else if (!state.micro && !pointerLive) { gazeT.x = 0; gazeT.y = 0; }
+  const gx = clamp(gazeT.x + P.gazeX * .8, -1, 1), gy = clamp(gazeT.y + P.gazeY * .8, -1, 1);
+  const ga = 1 - Math.exp(-dt / .05);
+  gaze.x += (gx - gaze.x) * ga; gaze.y += (gy - gaze.y) * ga;
+
+  updateSpeech(dt);
+
+  // demo
+  if (state.demo && t >= demoNext) {
+    demoIdx = (demoIdx + 1) % EMO_IDS.length;
+    setEmotion(EMO_IDS[demoIdx], state.intensity, undefined, 'demo');
+    demoNext = t + 3.5;
+  }
+
+  render(P);
+  updateHud();
+  requestAnimationFrame(frame);
+}
+
+// ---------- Actions ----------
+function setEmotion(id, intensity = state.intensity, ms, source = 'ui') {
+  if (!EMOTIONS[id]) return false;
+  state.emotion = id;
+  state.intensity = clamp(+intensity, 0, 1);
+  if (ms != null) state.transitionMs = clamp(+ms, 0, 5000);
+  state.adjusted = false;
+  computeTarget();
+  hueTarget = state.colorCode ? EMOTIONS[id].hue : 195;
+  if (Math.random() < .6) triggerBlink();
+  syncUI();
+  log('emotion', { id, intensity: state.intensity, ms: state.transitionMs, source });
+  return true;
+}
+function setParam(k, v, source = 'ui') {
+  if (!(k in DEF)) return false;
+  const m = PARAMS.find(p => p[0] === k);
+  target[k] = clamp(+v, m[3], m[4]);
+  state.adjusted = true;
+  syncAU();
+  if (source !== 'slider') log('param', { [k]: target[k], source });
+  return true;
+}
+function lookAt(x, y, sec = 3) {
+  manualGaze = { x: clamp(+x, -1, 1), y: clamp(+y, -1, 1), until: t + +sec };
+  log('lookAt', { x: manualGaze.x, y: manualGaze.y, sec: +sec });
+}
+function manualBlink() { triggerBlink(); log('blink', { source: 'manual' }); }
+
+window.face = {
+  setEmotion: (id, i, ms) => setEmotion(id, i, ms, 'api'),
+  setParam: (k, v) => setParam(k, v, 'api'),
+  lookAt, blink: manualBlink, say,
+  emotions: () => EMO_IDS.slice(),
+  getState: () => ({ emotion: state.emotion, intensity: state.intensity, adjusted: state.adjusted, target: { ...target }, current: { ...cur }, gaze: { ...gaze } }),
+  getLog: () => events.slice(),
+};
+window.addEventListener('message', e => {
+  const d = e.data;
+  if (!d || d.type !== 'face' || typeof d.cmd !== 'string') return;
+  const fn = window.face[d.cmd];
+  if (typeof fn === 'function') {
+    const res = fn(...(Array.isArray(d.args) ? d.args : []));
+    if (d.id != null && e.source) try { e.source.postMessage({ type: 'face:result', id: d.id, result: res }, '*'); } catch (_) {}
+  }
+});
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const grid = $('emoGrid');
+for (const id of EMO_IDS) {
+  const e = EMOTIONS[id];
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'emo'; b.dataset.id = id;
+  b.innerHTML = `<span>${e.label}<small>${e.au}</small></span><kbd>${e.key}</kbd>`;
+  b.addEventListener('click', () => setEmotion(id));
+  grid.appendChild(b);
+}
+const auList = $('auList');
+for (const [k, label, au, min, max] of PARAMS) {
+  const d = document.createElement('div'); d.className = 'au';
+  d.innerHTML = `<header><label for="au_${k}">${label} <i>${au}</i></label><output id="auo_${k}"></output></header>
+    <input type="range" id="au_${k}" min="${min}" max="${max}" step="0.01">`;
+  auList.appendChild(d);
+  const inp = d.querySelector('input');
+  inp.addEventListener('input', () => setParam(k, inp.value, 'slider'));
+  inp.addEventListener('change', () => log('param', { [k]: +inp.value, source: 'slider' }));
+}
+function syncAU() {
+  for (const [k] of PARAMS) {
+    const inp = $('au_' + k);
+    if (document.activeElement !== inp) inp.value = target[k];
+    $('auo_' + k).textContent = (+target[k]).toFixed(2);
+  }
+}
+function syncUI() {
+  for (const b of grid.children) b.setAttribute('aria-pressed', b.dataset.id === state.emotion);
+  $('intensity').value = Math.round(state.intensity * 100);
+  $('intensityOut').textContent = Math.round(state.intensity * 100) + ' %';
+  $('transition').value = state.transitionMs;
+  $('transitionOut').textContent = state.transitionMs + ' ms';
+  syncAU();
+}
+let hudCache = '';
+function updateHud() {
+  const e = EMOTIONS[state.emotion];
+  const mode = manualGaze && t < manualGaze.until ? 'styrd' : (state.follow && t - pointer.last < 2.5 ? 'pekare' : 'fri');
+  const s = `<b>${e.label}${state.adjusted ? ' (justerad)' : ''}</b> · ${Math.round(state.intensity * 100)} % · blick ${mode}${speech.active ? ' · talar' : ''} · ${fmtT(performance.now() - t0).slice(0, 5)}`;
+  if (s !== hudCache) { $('hud').innerHTML = s; hudCache = s; }
+}
+
+$('intensity').addEventListener('input', e => {
+  state.intensity = e.target.value / 100; computeTarget(); state.adjusted = false; syncUI();
+});
+$('intensity').addEventListener('change', () => log('intensity', { value: state.intensity }));
+$('transition').addEventListener('input', e => { state.transitionMs = +e.target.value; syncUI(); });
+$('transition').addEventListener('change', () => log('transition', { ms: state.transitionMs }));
+
+function bindToggle(id, key, onChange) {
+  const el = $(id); el.checked = state[key];
+  el.addEventListener('change', () => { state[key] = el.checked; onChange && onChange(); log('setting', { [key]: el.checked }); });
+}
+bindToggle('tFollow', 'follow');
+bindToggle('tBlink', 'autoBlink');
+bindToggle('tMicro', 'micro');
+bindToggle('tColor', 'colorCode', () => { hueTarget = state.colorCode ? EMOTIONS[state.emotion].hue : 195; });
+bindToggle('tDemo', 'demo', () => { demoNext = t; demoIdx = EMO_IDS.indexOf(state.emotion); });
+bindToggle('tSound', 'sound', () => { if (!state.sound && window.speechSynthesis) speechSynthesis.cancel(); });
+
+$('btnSay').addEventListener('click', () => say($('sayText').value));
+$('sayText').addEventListener('keydown', e => { if (e.key === 'Enter') say(e.target.value); });
+$('btnResetAU').addEventListener('click', () => { computeTarget(); state.adjusted = false; syncAU(); log('param', { reset: state.emotion }); });
+
+const toastEl = $('toast'); let toastTimer;
+function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.hidden = true, 2200); }
+function copy(text, what) {
+  const fb = $('fallback');
+  const fallback = () => { fb.hidden = false; fb.value = text; fb.focus(); fb.select(); toast('Markerat. Kopiera med Ctrl/Cmd+C.'); };
+  try {
+    navigator.clipboard.writeText(text).then(() => { fb.hidden = true; toast(what + ' kopierad'); }, fallback);
+  } catch (_) { fallback(); }
+}
+$('btnCopyAU').addEventListener('click', () => {
+  const o = {}; for (const k in DEF) o[k] = +(+target[k]).toFixed(3);
+  copy(JSON.stringify({ emotion: state.emotion, intensity: state.intensity, params: o }, null, 2), 'Parametrarna');
+});
+$('btnCopyLog').addEventListener('click', () => copy(JSON.stringify(events, null, 2), 'Loggen'));
+$('btnClearLog').addEventListener('click', () => {
+  events.length = 0; logEl.innerHTML = '<li class="empty">Loggen är tom.</li>'; $('logCount').textContent = 0; $('fallback').hidden = true;
+});
+
+function togglePanel() {
+  document.body.classList.toggle('presenting');
+  $('btnPanel').textContent = document.body.classList.contains('presenting') ? 'Visa panel' : 'Dölj panel';
+}
+$('btnPanel').addEventListener('click', togglePanel);
+function fullscreen() {
+  const el = document.documentElement;
+  if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+  const p = el.requestFullscreen && el.requestFullscreen();
+  if (p && p.catch) p.catch(() => toast('Helskärm stöds inte i den här vyn'));
+  else if (!p) toast('Helskärm stöds inte i den här vyn');
+}
+$('btnFull').addEventListener('click', fullscreen);
+
+// pointer → gaze, click → poke
+function toFace(e) {
+  const r = stage.getBoundingClientRect();
+  return { x: (e.clientX - r.left - view.ox) / view.s, y: (e.clientY - r.top - view.oy) / view.s };
+}
+window.addEventListener('pointermove', e => {
+  const f = toFace(e);
+  const dx = (f.x - 500) / 420, dy = (f.y - 420) / 420;
+  pointer.x = Math.tanh(dx * 1.4); pointer.y = Math.tanh(dy * 1.4);
+  pointer.last = t;
+});
+canvas.addEventListener('pointerdown', e => {
+  const f = toFace(e);
+  pointer.last = t;
+  if (Math.abs(f.x - 500) < 360 && Math.abs(f.y - 470) < 400) {
+    overlay = 1; triggerBlink();
+    log('poke', { x: Math.round(f.x), y: Math.round(f.y) });
+  }
+});
+
+window.addEventListener('keydown', e => {
+  if (e.target.matches('input[type="text"], textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const id = EMO_IDS.find(i => EMOTIONS[i].key === e.key);
+  if (id) { setEmotion(id, state.intensity, undefined, 'key'); return; }
+  const k = e.key.toLowerCase();
+  if (k === 'b') manualBlink();
+  else if (k === 'h') togglePanel();
+  else if (k === 'f') fullscreen();
+});
+
+computeTarget(); Object.assign(cur, target);
+$('tMicro').checked = state.micro;
+syncUI();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
