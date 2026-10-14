@@ -72,6 +72,9 @@ body.presenting .hud { display: none; }
   letter-spacing: .02em;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+  background: rgba(11,15,18,.6);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 .hud b { color: var(--fg); font-weight: 500; }
 
@@ -115,6 +118,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
 .toggles { display: flex; flex-direction: column; gap: 2px; }
 .toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; cursor: pointer; }
 .toggle span small { display: block; color: var(--muted); font-size: 12px; }
+.toggle select { font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; }
 .toggle input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
 
 .btn {
@@ -227,6 +231,7 @@ pre {
         <label class="toggle" for="tBlink"><span>Automatisk blinkning<small>Slumpintervall 2–6 s</small></span><input type="checkbox" id="tBlink" checked></label>
         <label class="toggle" for="tMicro"><span>Mikrorörelser<small>Andning, huvudsväng, sackader</small></span><input type="checkbox" id="tMicro" checked></label>
         <label class="toggle" for="tColor"><span>Känslofärg<small>Färgkodar ögonen per känsla</small></span><input type="checkbox" id="tColor"></label>
+        <label class="toggle" for="sceneSel"><span>Miljö<small>Bakgrund bakom roboten</small></span><select id="sceneSel"><option value="outdoor">Utomhus</option><option value="studio">Studio (mörk)</option></select></label>
         <label class="toggle" for="tDemo"><span>Demosekvens<small>Går igenom alla känslor var 3,5 s</small></span><input type="checkbox" id="tDemo"></label>
       </div>
     </section>
@@ -337,7 +342,7 @@ const EMO_IDS = Object.keys(EMOTIONS);
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const state = { emotion:'neutral', intensity:.8, transitionMs:450, follow:true, autoBlink:true,
-  micro:!reduced, colorCode:false, demo:false, sound:false, adjusted:false };
+  micro:!reduced, colorCode:false, demo:false, sound:false, adjusted:false, scene:'outdoor' };
 const target = { ...DEF }, cur = { ...DEF };
 let hue = 195, hueTarget = 195;
 
@@ -401,7 +406,138 @@ function resize() {
   view.s = Math.min(view.W, view.H) / 1000 * 0.95;
   view.ox = view.W / 2 - 500 * view.s;
   view.oy = view.H / 2 - 500 * view.s;
+  if (state.scene === 'outdoor') buildScene();
 }
+// ---------- Outdoor scene ----------
+// Static layers are pre-rendered on resize; clouds drift and layers shift with gaze for depth.
+const scene = { sky:null, far:null, near:null, clouds:[], m:0, horizon:0 };
+function seeded(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; };
+}
+function layer(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * view.dpr)); c.height = Math.max(1, Math.round(h * view.dpr));
+  const x = c.getContext('2d'); x.scale(view.dpr, view.dpr);
+  return [c, x];
+}
+function spruce(x, cx, base, h, col) {
+  const w = h * .42;
+  x.fillStyle = col;
+  x.fillRect(cx - h * .03, base - h * .12, h * .06, h * .12);
+  for (let i = 0; i < 5; i++) {
+    const ty = base - h * .1 - i * h * .18, tw = w * (1 - i * .17);
+    x.beginPath(); x.moveTo(cx - tw, ty); x.lineTo(cx, ty - h * .34); x.lineTo(cx + tw, ty); x.closePath(); x.fill();
+  }
+}
+function birch(x, cx, base, h, R) {
+  x.fillStyle = '#ecebe4'; x.fillRect(cx - h * .018, base - h, h * .036, h);
+  x.fillStyle = '#3b3a36';
+  for (let y = base - h; y < base; y += h * .06) if (R() < .6) x.fillRect(cx - h * .018, y, h * .036 * R(), h * .012);
+  for (let i = 0; i < 26; i++) {
+    const a = R() * Math.PI * 2, r = h * .22 * Math.sqrt(R());
+    x.fillStyle = `hsl(${88 + R() * 20},${45 + R() * 15}%,${34 + R() * 14}%)`;
+    x.beginPath(); x.arc(cx + Math.cos(a) * r * 1.1, base - h * .78 + Math.sin(a) * r * 1.3, h * (.07 + R() * .05), 0, Math.PI * 2); x.fill();
+  }
+}
+function buildScene() {
+  const W = view.W, H = view.H, s = view.s, m = Math.ceil(30 + W * .02);
+  scene.m = m;
+  const hz = Math.round(view.oy + 700 * s);          // horizon sits behind the robot's neck
+  scene.horizon = hz;
+  const R = seeded(7);
+  // sky
+  let [c, x] = layer(W, H);
+  let g = x.createLinearGradient(0, 0, 0, hz);
+  g.addColorStop(0, '#5d9fd8'); g.addColorStop(.55, '#9fcbec'); g.addColorStop(1, '#e9ecdf');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const sx = W * .16, sy = hz * .2, sr = Math.max(W, H) * .5;
+  g = x.createRadialGradient(sx, sy, 0, sx, sy, sr);
+  g.addColorStop(0, 'rgba(255,250,225,.95)'); g.addColorStop(.06, 'rgba(255,246,210,.75)'); g.addColorStop(.3, 'rgba(255,240,200,.18)'); g.addColorStop(1, 'rgba(255,240,200,0)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  scene.sky = c;
+  // far: mountains, forest edge, lake
+  const FW = W + 2 * m;
+  [c, x] = layer(FW, H);
+  const ridge = (amp, base, col, f1, f2, ph) => {
+    x.beginPath(); x.moveTo(0, H);
+    for (let px = 0; px <= FW; px += 4) {
+      const y = base - amp * (.55 + .3 * Math.sin(px * f1 + ph) + .15 * Math.sin(px * f2 + ph * 2.3) + .08 * Math.sin(px * f2 * 3.1));
+      x.lineTo(px, y);
+    }
+    x.lineTo(FW, H); x.closePath(); x.fillStyle = col; x.fill();
+  };
+  ridge(hz * .28, hz, '#a9bfd2', .0042, .011, 1.3);
+  ridge(hz * .17, hz, '#86a5b8', .0063, .017, 4.1);
+  ridge(hz * .08, hz, '#5f8574', .009, .023, 2.2);
+  const lakeH = Math.max(14, H * .045);
+  g = x.createLinearGradient(0, hz, 0, hz + lakeH);
+  g.addColorStop(0, '#9cc6df'); g.addColorStop(1, '#6fa3c3');
+  x.fillStyle = g; x.fillRect(0, hz, FW, lakeH);
+  x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 1;
+  for (let i = 0; i < 40; i++) { const lx = R() * FW, ly = hz + 3 + R() * (lakeH - 6); x.beginPath(); x.moveTo(lx, ly); x.lineTo(lx + 6 + R() * 22, ly); x.stroke(); }
+  for (let px = -10; px < FW + 10; px += 5 + R() * 7) {
+    const th = (14 + R() * 26) * Math.max(.6, s * 1.4);
+    spruce(x, px, hz + 1, th, `hsl(${150 + R() * 15},${28 + R() * 10}%,${20 + R() * 8}%)`);
+  }
+  scene.far = c;
+  // near: meadow, trees at the edges, flowers
+  const NW = W + 4 * m;
+  [c, x] = layer(NW, H);
+  const gy = hz + lakeH;
+  g = x.createLinearGradient(0, gy, 0, H);
+  g.addColorStop(0, '#9cc56d'); g.addColorStop(.4, '#7cb052'); g.addColorStop(1, '#4f8a39');
+  x.fillStyle = g; x.fillRect(0, gy, NW, H - gy);
+  for (let i = 0; i < 900; i++) {
+    const py = gy + Math.pow(R(), .7) * (H - gy), d = (py - gy) / Math.max(1, H - gy);
+    const px = R() * NW, bh = 3 + d * 16;
+    x.strokeStyle = `hsla(${90 + R() * 25},45%,${26 + R() * 18}%,.55)`; x.lineWidth = .6 + d;
+    x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + 2, py - bh * .6, px + (R() - .5) * 6, py - bh); x.stroke();
+  }
+  const FL = ['#ffffff', '#f6d44a', '#b58ce0', '#f2f2f2', '#ffd84d'];
+  for (let i = 0; i < 160; i++) {
+    const py = gy + 6 + Math.pow(R(), .8) * (H - gy), d = (py - gy) / Math.max(1, H - gy);
+    x.fillStyle = FL[(R() * FL.length) | 0];
+    x.beginPath(); x.arc(R() * NW, py, 1 + d * 2.6, 0, Math.PI * 2); x.fill();
+  }
+  // edge trees, kept clear of the robot in the middle
+  const clear = 560 * s;
+  const sideTrees = [[.03, .95, 'b'], [.12, .6, 's'], [.89, .55, 's'], [.97, .9, 'b']];
+  for (const [fx, sc, kind] of sideTrees) {
+    const cx = 2 * m + fx * W;
+    if (Math.abs(cx - 2 * m - W / 2) < clear) continue;
+    const th = Math.min(H * .75, (hz) * .9) * sc;
+    const base = gy + (H - gy) * .35 * sc;
+    if (kind === 's') spruce(x, cx, base, th, `hsl(152,30%,${18 + R() * 6}%)`); else birch(x, cx, base, th, R);
+  }
+  scene.near = c;
+  // clouds
+  scene.clouds = [];
+  for (let i = 0; i < 6; i++) {
+    const cw = (180 + R() * 220) * Math.max(.5, s * 1.3), ch = cw * .4;
+    const [cc, cx2] = layer(cw, ch);
+    for (let j = 0; j < 14; j++) {
+      const px = cw * (.15 + R() * .7), py = ch * (.45 + R() * .3), r = ch * (.18 + R() * .22);
+      const gg = cx2.createRadialGradient(px, py - r * .3, 0, px, py, r);
+      gg.addColorStop(0, 'rgba(255,255,255,.9)'); gg.addColorStop(.7, 'rgba(255,255,255,.55)'); gg.addColorStop(1, 'rgba(255,255,255,0)');
+      cx2.fillStyle = gg; cx2.beginPath(); cx2.arc(px, py, r, 0, Math.PI * 2); cx2.fill();
+    }
+    scene.clouds.push({ c: cc, w: cw, h: ch, x: R() * (W + cw) - cw, y: hz * (.05 + R() * .45), v: 4 + R() * 8 });
+  }
+}
+function drawScene(dt) {
+  const d = view.dpr, m = scene.m;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.drawImage(scene.sky, 0, 0, view.W, view.H);
+  for (const cl of scene.clouds) {
+    if (state.micro) cl.x += cl.v * dt;
+    if (cl.x > view.W + 20) cl.x = -cl.w - 20;
+    ctx.drawImage(cl.c, cl.x - gaze.x * 3, cl.y, cl.w, cl.h);
+  }
+  ctx.drawImage(scene.far, -m - gaze.x * 8, 0, view.W + 2 * m, view.H);
+  ctx.drawImage(scene.near, -2 * m - gaze.x * 22, 0, view.W + 4 * m, view.H);
+}
+
 new ResizeObserver(resize).observe(stage);
 resize();
 
@@ -579,9 +715,10 @@ function drawMouth(cx, cy, P) {
   ctx.restore();
 }
 
-function render(P) {
+function render(P, dt) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (state.scene === 'outdoor') drawScene(dt);
   const k = view.dpr * view.s; view.k = k;
   ctx.setTransform(k, 0, 0, k, view.dpr * view.ox, view.dpr * view.oy);
 
@@ -778,7 +915,7 @@ function frame(now) {
     demoNext = t + 3.5;
   }
 
-  render(P);
+  render(P, dt);
   updateHud();
   requestAnimationFrame(frame);
 }
@@ -819,6 +956,7 @@ window.face = {
   emotions: () => EMO_IDS.slice(),
   getState: () => ({ emotion: state.emotion, intensity: state.intensity, adjusted: state.adjusted, target: { ...target }, current: { ...cur }, gaze: { ...gaze } }),
   getLog: () => events.slice(),
+  setScene: v => setScene(v, 'api'),
 };
 window.addEventListener('message', e => {
   const d = e.data;
@@ -889,6 +1027,14 @@ bindToggle('tFollow', 'follow');
 bindToggle('tBlink', 'autoBlink');
 bindToggle('tMicro', 'micro');
 bindToggle('tColor', 'colorCode', () => { hueTarget = state.colorCode ? EMOTIONS[state.emotion].hue : 195; });
+function setScene(v, source = 'ui') {
+  if (v !== 'outdoor' && v !== 'studio') return false;
+  state.scene = v; $('sceneSel').value = v;
+  if (v === 'outdoor') buildScene();
+  log('scene', { value: v, source });
+  return true;
+}
+$('sceneSel').addEventListener('change', e => setScene(e.target.value));
 bindToggle('tDemo', 'demo', () => { demoNext = t; demoIdx = EMO_IDS.indexOf(state.emotion); });
 bindToggle('tSound', 'sound', () => { if (!state.sound && window.speechSynthesis) speechSynthesis.cancel(); });
 
