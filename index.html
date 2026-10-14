@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Robotansiktet</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,7 +25,10 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   color-scheme: dark;
 }
+*, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
+body { margin: 0; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -177,6 +185,8 @@ pre {
   body.presenting .stage { height: 100svh; }
 }
 </style>
+</head>
+<body>
 
 <div class="app">
   <div class="stage" id="stage">
@@ -954,3 +964,5 @@ syncUI();
 requestAnimationFrame(frame);
 })();
 </script>
+</body>
+</html>
