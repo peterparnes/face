@@ -742,17 +742,6 @@ function render(P, dt) {
   const hx = 500 + gaze.x * 9, hy = 520 + breath + P.nod * 16;
   ctx.translate(hx, hy); ctx.rotate(P.tilt * .12 + sway); ctx.translate(-500, -520);
 
-  // ears with status light
-  for (const ex of [150, 850]) {
-    gr = ctx.createRadialGradient(ex - 10, 455, 4, ex, 470, 62);
-    gr.addColorStop(0, '#6a747e'); gr.addColorStop(1, '#262d33');
-    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(ex, 470, 60, 0, Math.PI * 2); ctx.fill();
-    setGlow(14);
-    ctx.strokeStyle = glow(.8); ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(ex, 470, 42, 0, Math.PI * 2); ctx.stroke();
-    noGlow();
-  }
-
   // shell
   gr = ctx.createLinearGradient(250, 90, 760, 900);
   gr.addColorStop(0, '#f3f5f7'); gr.addColorStop(.55, '#cdd3d9'); gr.addColorStop(1, '#8f99a3');
